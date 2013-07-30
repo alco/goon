@@ -186,3 +186,6 @@ end
                      #err: :out | :buffer | pid | {:file, ...})
 
 #p = Porc.execute("cat", in: "Hello world!", out: :buffer)
+
+p = Port.open({:spawn_executable, '/usr/local/bin/go'}, [{:args, ["run", "main.go", "cat"]}, :binary, {:packet, 2}, :exit_status])
+p = Port.open({:spawn_executable, '/bin/cat'}, [:binary, :stream, :exit_status])

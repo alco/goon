@@ -1,159 +1,107 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 )
 
-/*func spawn(cmdname string, args []string) {*/
-	/*cmd := exec.Command(cmdname, args...)*/
-/*}*/
+const kOutputBufferSize = 1 << 10
 
-// read *all* input up to the newline
-func readln(r *bufio.Reader) ([]byte, error) {
-    var (
-        isPrefix bool = true
-        err error     = nil
-        line, ln []byte
-    )
-
-    for isPrefix && err == nil {
-        line, isPrefix, err = r.ReadLine()
-        ln = append(ln, line...)
-    }
-
-    return ln, err
+func die(any interface{}) {
+	fmt.Printf("%v\n", any);
+	os.Exit(1)
 }
 
-type Process struct {
-	cmd *exec.Cmd
-	pin io.WriteCloser
-	pout io.ReadCloser
+func fatal(any interface{}) {
+	panic(any)
 }
 
-func NewProcess(cmdname string, args... string) (p *Process, err error) {
-	cmd := exec.Command(cmdname, args...)
+func read16_be(data []byte) int16 {
+	return int16(data[0]) << 8 | int16(data[1])
+}
 
-	pin, err := cmd.StdinPipe()
+func write16_be(data []byte, num int) {
+	data[0] = byte(num >> 8)
+	data[1] = byte(num)
+}
+
+func wrapStdin(proc *exec.Cmd, stdin io.Reader) {
+	pipe, err := proc.StdinPipe()
 	if err != nil {
-		return
-	}
-
-	pout, err := cmd.StdoutPipe()
-	if err != nil {
-		return
-	}
-
-	p = &Process{cmd: cmd, pin: pin, pout: pout}
-	return
-}
-
-func (p *Process) Write(data []byte) (int, error) {
-	return p.pin.Write(data)
-}
-
-func (p *Process) WriteFrom(r io.Reader) error {
-	// ...
-	return nil
-}
-
-func (p *Process) SendEOF() error {
-	return p.pin.Close()
-}
-
-func (p *Process) Read() ([]byte, error) {
-	var buf bytes.Buffer
-	_, err := buf.ReadFrom(p.pout)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func (p *Process) ReadInto(buf []byte) (int, error) {
-	nbytes, err := p.pout.Read(buf)
-	return nbytes, err
-}
-
-func (p *Process) Execute(input string) (string, error) {
-	err := p.cmd.Start()
-	if err != nil {
-		return "", err
+		fatal(err)
 	}
 
 	go func() {
-		p.Write([]byte(input))
-		p.SendEOF()
-	}()
-
-	data, err := p.Read()
-	return string(data), err
-}
-
-func main() {
-	proc, err := NewProcess("/Users/alco/Downloads/Pygments-1.6/pygmentize", "-f", "html", "-l", "javascript")
-	if err != nil {
-		panic(err)
-	}
-
-	var buf bytes.Buffer
-	buf.ReadFrom(os.Stdin)
-
-	output, err := proc.Execute(string(buf.Bytes()))
-	if err != nil {
-		panic(err)
-	}
-	print(output)
-}
-
-func mmain() {
-	cmd := exec.Command("/Users/alco/Downloads/Pygments-1.6/pygmentize", "-f", "html", "-l", "javascript")
-
-	pipe_in, err := cmd.StdinPipe()
-	if err != nil {
-		panic(err)
-	}
-	pipe_out, err := cmd.StdoutPipe()
-	if err != nil {
-		panic(err)
-	}
-
-	done := make(chan bool)
-
-	go func() {
-		r := bufio.NewReader(os.Stdin)
+		buf := make([]byte, 2)
 		for {
-			line, eof := readln(r)
-			fmt.Println("Got line", line)
-			pipe_in.Write(line)
-			if eof != nil {
-				println("Got eof")
-				err := pipe_in.Close()
-				if err != nil {
-					panic(err)
+			nbytes, err := io.ReadFull(stdin, buf)
+			if err != nil {
+				if err == io.EOF && nbytes == 0 {
+					pipe.Close()
+					break
 				}
-				break;
+				fatal(err)
+			}
+
+			length := read16_be(buf)
+			if length == 0 {
+				// EOF
+				pipe.Close()
+				break
+			}
+
+			_, err = io.CopyN(pipe, stdin, int64(length))
+			if err != nil {
+				fatal(err)
 			}
 		}
 	}()
+}
+
+func wrapStdout(proc *exec.Cmd, stdout io.Writer) {
+	pipe, err := proc.StdoutPipe()
+	if err != nil {
+		fatal(err)
+	}
 
 	go func() {
-		var buf bytes.Buffer
-		_, err := buf.ReadFrom(pipe_out)
-		if err != nil {
-			panic(err)
-		}
-		print(string(buf.Bytes()))
-		done <- true
-	}()
+		buf := make([]byte, kOutputBufferSize)
+		for {
+			nbytes, err := pipe.Read(buf[2:])
+			if nbytes > 0 {
+				write16_be(buf[:2], nbytes)
+				stdout.Write(buf[:2+nbytes])
+			}
 
-	err = cmd.Start()
-	if err != nil {
-		panic(err)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				fatal(err)
+			}
+		}
+	}()
+}
+
+func main() {
+	// First, we see which program needs to be launched
+	flag.Parse()
+	args := flag.Args()
+
+	if len(args) < 1 {
+		die("Not enough arguments.\nSynopsis: goon <program> [arg1] ...")
 	}
-	<-done
+
+	proc := exec.Command(args[0], args[1:]...)
+	wrapStdin(proc, os.Stdin)
+	wrapStdout(proc, os.Stdout)
+
+	// Now we're ready to start the requested program
+	err := proc.Run()
+	if err != nil {
+		fatal(err)
+	}
 }

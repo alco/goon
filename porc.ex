@@ -14,23 +14,9 @@ defmodule Porc do
     end
   end
 
+  # This splits the list of arguments with the command name already stripped
   defp split(args) when is_binary(args) do
     String.split args, " "
-  end
-
-  defp open_port(opts) do
-    go = :os.find_executable 'go'
-    Port.open { :spawn_executable, go }, opts
-  end
-
-  defp init_port_connection(cmd, args, options) do
-    port = open_port(port_options(options, cmd, args))
-
-    input  = process_input_opts(port, options[:in])
-    output = process_output_opts(port, options[:out])
-    error  = process_error_opts(port, options[:err])
-
-    { port, input, output, error }
   end
 
   @doc """
@@ -53,49 +39,79 @@ defmodule Porc do
     communicate(port, input, output, error)
   end
 
-  defp communicate(port, input, output, _error) do
-    if input do
-      #IO.puts "Passing input to port: #{input}"
-      Port.command(port, input)
-      Port.command(port, "")  # send EOF
-      #Port.close(port)
+  @file_block_size 1024
+
+  # Synchronous communication with a port
+  defp communicate(port, input, output, error) do
+    case input do
+      bin when is_binary(bin) and byte_size(bin) > 0 ->
+        #IO.puts "sending input #{bin}"
+        Port.command(port, input)
+
+      {:file, fid} ->
+        Stream.repeatedly(fn -> IO.read(fid, @file_block_size) end)
+        |> Enum.take_while(fn  # FIXME: needs to be Stream.take_while
+          :eof -> false
+          {:error, _} -> false
+          _ -> true
+        end)
+        |> Enum.each(Port.command(port, &1))
+
+      _ -> nil
     end
-    collect_output(port, output, nil, "", 0)
+    # Send EOF to indicate the end of input or no input
+    Port.command(port, "")
+
+    collect_output(port, output, error, 0)
   end
 
-  defp collect_output(port, output, out_data, err_data, status) do
+  # Runs in a recursive loop until the process exits
+  defp collect_output(port, output, error, status) do
     #IO.puts "Collecting output"
     receive do
-      { ^port, {:data, data} } ->
-        out_data = process_port_output(output, data, out_data)
-        #IO.puts "Got data #{inspect out_data}"
-        collect_output(port, output, out_data, err_data, status)
-        #{ 0, flatten(out_data), err_data }
+      { ^port, {:data, <<?o, data :: binary>>} } ->
+        #IO.puts "Did receive out"
+        output = process_port_output(output, data, :stdout)
+        collect_output(port, output, error, status)
+
+      { ^port, {:data, <<?e, data :: binary>>} } ->
+        #IO.puts "Did receive err"
+        error = process_port_output(error, data, :stderr)
+        collect_output(port, output, error, status)
 
       { ^port, {:exit_status, status} } ->
-        { status, flatten(out_data), err_data }
+        { status, flatten(output), flatten(error) }
 
       #{ ^port, :eof } ->
         #collect_output(port, output, out_data, err_data, true, did_see_exit, status)
     end
   end
 
-  defp process_port_output(output_opt, in_data, nil) do
-    process_port_output(output_opt, in_data, "")
+  defp process_port_output({ :buffer, out_data }, in_data, _) do
+    {:buffer, [out_data, in_data]}
   end
 
-  defp process_port_output({ :buffer, _ }, in_data, out_data) do
-    [out_data, in_data]
+  defp process_port_output({ :file, fid }=a, in_data, _) do
+    :ok = IO.write fid, in_data
+    a
   end
 
-  defp process_port_output({:file, file}, in_data, out_data) do
-    :ok = IO.write file, in_data
-    out_data
+  defp process_port_output({ pid, ref }=a, in_data, type) when is_pid(pid) do
+    pid <- { ref, type, in_data }
+    a
   end
 
-  defp process_port_output(pid, in_data, out_data) when is_pid(pid) do
-    pid <- in_data
-    out_data
+  # Takes the output which is a nested list of binaries and produces a single
+  # binary from it
+  defp flatten({:buffer, iolist}) do
+    #IO.puts "Flattening an io list #{inspect iolist}"
+    {:ok, bin} = String.from_char_list iolist
+    bin
+  end
+
+  defp flatten(other) do
+    #IO.puts "Flattening #{inspect other}"
+    other
   end
 
   @doc """
@@ -125,64 +141,49 @@ defmodule Porc do
     port_opts
   end
 
-  defp process_input_opts(_port, opt) do
+  defp open_port(opts) do
+    go = :os.find_executable 'go'
+    Port.open { :spawn_executable, go }, opts
+  end
+
+  # Processes port options opens a port. Used in both call() and spawn()
+  defp init_port_connection(cmd, args, options) do
+    port = open_port(port_options(options, cmd, args))
+
+    input  = process_input_opts(options[:in])
+    output = process_output_opts(options[:out])
+    error  = process_error_opts(options[:err])
+
+    { port, input, output, error }
+  end
+
+  defp process_input_opts(opt) do
     case opt do
-      nil          -> nil
-      :pid         -> :something # TODO: spawn(...)
-      { :file, f } -> { :file, f }
-      bin when is_binary(bin) ->
-        bin
-        ## TODO: make it async
-        #Port.command(port, bin)
-        #nil
+      nil                     -> nil
+      { :file, fid }          -> { :file, fid }
+      { pid, ref }            -> { pid, ref }
+      bin when is_binary(bin) -> bin
     end
   end
 
-  defp process_output_opts(_port, opt) do
+  defp process_output_opts(opt) do
     case opt do
-      nil          -> { :buffer, nil }
-      :err         -> nil
-      :buffer      -> { :buffer, nil }
-      { :file, f } -> { :file, f }
-      pid when is_pid(pid) ->
-        pid
+      :err                          -> nil
+      nil                           -> { :buffer, "" }
+      :buffer                       -> { :buffer, "" }
+      { :file, fid }                -> { :file, fid }
+      { pid, ref } when is_pid(pid) -> { pid, ref }
     end
   end
 
-  defp process_error_opts(_port, opt) do
+  defp process_error_opts(opt) do
     case opt do
-      nil          -> { :buffer, nil }
-      :out         -> nil
-      :buffer      -> { :buffer, nil }
-      { :file, f } -> { :file, f }
-      pid when is_pid(pid) ->
-        pid
+      :out                          -> nil
+      nil                           -> { :buffer, "" }
+      :buffer                       -> { :buffer, "" }
+      { :file, fid }                -> { :file, fid }
+      { pid, ref } when is_pid(pid) -> { pid, ref }
     end
-  end
-
-
-  defp flatten(nil) do
-    ""
-  end
-
-  defp flatten(list) do
-    flatten(list, [])
-  end
-
-  defp flatten([], acc) do
-    acc |> Enum.reverse |> Enum.join("")
-  end
-
-  defp flatten([ [] | t ], acc) do
-    flatten(t, acc)
-  end
-
-  defp flatten([ [h|t] | tt ], acc) do
-    flatten([ t | tt ], [h|acc])
-  end
-
-  defp flatten([ h | t ], acc) do
-    flatten(t, [h|acc])
   end
 end
 
@@ -190,7 +191,7 @@ end
                      #out: :err | :buffer | pid | {:file, ...},
                      #err: :out | :buffer | pid | {:file, ...})
 
-#p = Porc.call("cat", in: "Hello world!")
+#Porc.call("cat", in: "Hello world!")
 # ==>
 #p = Port.open({:spawn_executable, '/usr/local/bin/go'}, [{:args, ["run", "main.go", "cat"]}, :binary, {:packet, 2}, :exit_status])
 

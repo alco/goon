@@ -3,15 +3,33 @@ defmodule Porc do
 
   @doc """
   Takes a shell invocation and produces a tuple `{ cmd, args }` suitable for
-  use in `execute()` and `spawn()` functions.
+  use in `call()` and `spawn()` functions.
   """
   def shplit(invocation) when is_binary(invocation) do
-    [cmd, rest] = String.split invocation, " ", global: false
-    { cmd, split(rest) }
+    case String.split(invocation, " ", global: false) do
+      [cmd, rest] ->
+        { cmd, split(rest) }
+      [cmd] ->
+        { cmd, [] }
+    end
   end
 
   defp split(args) when is_binary(args) do
     String.split args, " "
+  end
+
+  defp open_port(opts) do
+    Port.open { :spawn_executable, '/usr/local/bin/go' }, opts
+  end
+
+  defp init_port_connection(cmd, args, options) do
+    port = open_port(port_options(options, cmd, args))
+
+    input  = process_input_opts(port, options[:in])
+    output = process_output_opts(port, options[:out])
+    error  = process_error_opts(port, options[:err])
+
+    { port, input, output, error }
   end
 
   @doc """
@@ -19,53 +37,42 @@ defmodule Porc do
   except for one difference: `options[:in]` cannot be `:pid`; must be either a
   binary or `{ :file, <file> }`.
   """
-  def execute(cmd, options) when is_binary(cmd) do
-    execute(shplit(cmd), options)
+  def call(cmd, options) when is_binary(cmd) do
+    call(shplit(cmd), options)
   end
 
-  def execute({ cmd, args }, options) when is_binary(cmd)
-                                       and is_binary(args) do
-    execute({ cmd, split(args) }, options)
-  end
-
-  def execute({ cmd, args }, options) when is_binary(cmd)
-                                       and is_list(args)
-                                       and is_list(options) do
+  def call({ cmd, args }, options) when is_binary(cmd)
+                                    and is_list(args)
+                                    and is_list(options) do
     if options[:in] == :pid do
-      raise RuntimeError, message: "Option [in: :pid] cannot be used with execute()"
+      raise RuntimeError, message: "Option [in: :pid] cannot be used with call()"
     end
 
-    { :ok, ccmd } = String.to_char_list(cmd)
-    port_opts = port_options(options, args)
-    port = Port.open { :spawn_executable, ccmd }, port_opts
-
-    input  = process_input_opts(port, options[:in])
-    output = process_output_opts(port, options[:out])
-    error  = process_error_opts(port, options[:err])
-
+    {port, input, output, error} = init_port_connection(cmd, args, options)
     communicate(port, input, output, error)
   end
 
   defp communicate(port, input, output, _error) do
     if input do
-      IO.puts "Passing input to port: #{input}"
+      #IO.puts "Passing input to port: #{input}"
       Port.command(port, input)
-      Port.close(port)
+      Port.command(port, "")  # send EOF
+      #Port.close(port)
     end
-    collect_output(port, output, nil, nil, 0)
+    collect_output(port, output, nil, "", 0)
   end
 
   defp collect_output(port, output, out_data, err_data, status) do
-    IO.puts "Collecting output"
+    #IO.puts "Collecting output"
     receive do
       { ^port, {:data, data} } ->
         out_data = process_port_output(output, data, out_data)
-        IO.puts "Got data #{inspect out_data}"
-        #collect_output(port, output, out_data, err_data, status)
-        { 0, flatten(out_data), err_data }
+        #IO.puts "Got data #{inspect out_data}"
+        collect_output(port, output, out_data, err_data, status)
+        #{ 0, flatten(out_data), err_data }
 
       { ^port, {:exit_status, status} } ->
-        { status, out_data, err_data }
+        { status, flatten(out_data), err_data }
 
       #{ ^port, :eof } ->
         #collect_output(port, output, out_data, err_data, true, did_see_exit, status)
@@ -99,41 +106,34 @@ defmodule Porc do
   end
 
   def spawn({ cmd, args }, options) when is_binary(cmd)
-                                     and is_binary(args) do
-    spawn({ cmd, split(args) }, options)
-  end
-
-  def spawn({ cmd, args }, options) when is_binary(cmd)
                                      and is_list(args)
                                      and is_list(options) do
-    { :ok, ccmd } = String.to_char_list(cmd)
-    port_opts = port_options(options, args)
-    port = Port.open { :spawn_executable, ccmd }, port_opts
-
-    input  = process_input_opts(port, options[:in])
-    output = process_output_opts(port, options[:out])
-    error  = process_error_opts(port, options[:err])
-
+    {port, input, output, error} = init_port_connection(cmd, args, options)
     Process[port: port, in: input, out: output, err: error]
   end
 
-  defp port_options(options, args) do
-    port_opts = [{:args, args}, :stream, :use_stdio, :binary, :exit_status, :hide]
+  defp port_options(options, cmd, args) do
+    #p = Porc.call("cat", in: "Hello world!", out: :buffer)
+    ## ==>
+    #p = Port.open({:spawn_executable, '/usr/local/bin/go'}, [{:args, ["run", "main.go", "cat"]}, :binary, {:packet, 2}, :exit_status])
+
+    port_opts = [{:args, ["run", "main.go"] ++ [cmd | args]}, :binary, {:packet, 2}, :exit_status, :use_stdio, :hide]
     if options[:err] == :out do
       port_opts = [:stderr_to_stdio | port_opts]
     end
     port_opts
   end
 
-  defp process_input_opts(port, opt) do
+  defp process_input_opts(_port, opt) do
     case opt do
       nil          -> nil
       :pid         -> :something # TODO: spawn(...)
       { :file, f } -> { :file, f }
       bin when is_binary(bin) ->
-        # TODO: make it async
-        Port.command(port, bin)
-        nil
+        bin
+        ## TODO: make it async
+        #Port.command(port, bin)
+        #nil
     end
   end
 
@@ -160,6 +160,10 @@ defmodule Porc do
   end
 
 
+  defp flatten(nil) do
+    ""
+  end
+
   defp flatten(list) do
     flatten(list, [])
   end
@@ -185,7 +189,12 @@ end
                      #out: :err | :buffer | pid | {:file, ...},
                      #err: :out | :buffer | pid | {:file, ...})
 
-#p = Porc.execute("cat", in: "Hello world!", out: :buffer)
+#p = Porc.call("cat", in: "Hello world!")
+# ==>
+#p = Port.open({:spawn_executable, '/usr/local/bin/go'}, [{:args, ["run", "main.go", "cat"]}, :binary, {:packet, 2}, :exit_status])
 
-p = Port.open({:spawn_executable, '/usr/local/bin/go'}, [{:args, ["run", "main.go", "cat"]}, :binary, {:packet, 2}, :exit_status])
-p = Port.open({:spawn_executable, '/bin/cat'}, [:binary, :stream, :exit_status])
+#p = Port.open({:spawn_executable, '/usr/local/bin/go'}, [{:args, ["run", "main.go", "cat -and dogs"]}, :binary, :exit_status])
+#p = Port.open({:spawn_executable, '/usr/local/bin/go'}, [{:args, ["run", "main.go", "cat", "-and", "dogs"]}, :binary, :exit_status])
+#
+#p = Port.open({:spawn_executable, '/usr/local/bin/go'}, [{:args, ["run", "main.go", "cat"]}, :binary, {:packet, 2}, :exit_status])
+#p = Port.open({:spawn_executable, '/bin/cat'}, [:binary, :stream, :exit_status])

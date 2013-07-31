@@ -19,7 +19,8 @@ defmodule Porc do
   end
 
   defp open_port(opts) do
-    Port.open { :spawn_executable, '/usr/local/bin/go' }, opts
+    go = :os.find_executable 'go'
+    Port.open { :spawn_executable, go }, opts
   end
 
   defp init_port_connection(cmd, args, options) do

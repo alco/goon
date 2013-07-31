@@ -8,7 +8,7 @@ import (
 	"os/exec"
 )
 
-const kOutputBufferSize = 1 << 10
+const kOutputBufferSize = 1024
 
 func die(any interface{}) {
 	fmt.Printf("%v\n", any);
@@ -33,7 +33,7 @@ func write16_be(data []byte, num int) {
 	data[1] = byte(num)
 }
 
-func wrapStdin(proc *exec.Cmd, stdin io.Reader) {
+func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) {
 	pipe, err := proc.StdinPipe()
 	if err != nil {
 		fatal(err)
@@ -63,22 +63,19 @@ func wrapStdin(proc *exec.Cmd, stdin io.Reader) {
 				fatal(err)
 			}
 		}
+		done <- true
 	}()
 }
 
-func wrapStdout(proc *exec.Cmd, stdout io.Writer) {
-	pipe, err := proc.StdoutPipe()
-	if err != nil {
-		fatal(err)
-	}
-
+func wrapOut(pipe io.ReaderCloser, outstream io.Writer, done chan bool) {
 	go func() {
 		buf := make([]byte, kOutputBufferSize)
+		buf[2] = 'o'
 		for {
-			nbytes, err := pipe.Read(buf[2:])
+			nbytes, err := pipe.Read(buf[3:])
 			if nbytes > 0 {
-				write16_be(buf[:2], nbytes)
-				stdout.Write(buf[:2+nbytes])
+				write16_be(buf[:2], nbytes+1)
+				outstream.Write(buf[:2+nbytes+1])
 			}
 
 			if err == io.EOF {
@@ -88,7 +85,24 @@ func wrapStdout(proc *exec.Cmd, stdout io.Writer) {
 				fatal(err)
 			}
 		}
+		done <- true
 	}()
+}
+
+func wrapStdout(proc *exec.Cmd, stdout io.Writer, done chan bool) {
+	pipe, err := proc.StdoutPipe()
+	if err != nil {
+		fatal(err)
+	}
+	wrapOut(pipe, stdout, done)
+}
+
+func wrapStderr(proc *exec.Cmd, stderr io.Writer, done chan bool) {
+	pipe, err := proc.StderrPipe()
+	if err != nil {
+		fatal(err)
+	}
+	wrapOut(pipe, stderr, done)
 }
 
 func main() {
@@ -106,13 +120,18 @@ func main() {
 		args = shplit(args[0])
 	}
 
+	done := make(chan bool)
 	proc := exec.Command(args[0], args[1:]...)
-	wrapStdin(proc, os.Stdin)
-	wrapStdout(proc, os.Stdout)
+	wrapStdin(proc, os.Stdin, done)
+	wrapStdout(proc, os.Stdout, done)
+	wrapStderr(proc, os.Stdout, done)
 
 	// Now we're ready to start the requested program
-	err := proc.Run()
-	if err != nil {
-		fatal(err)
-	}
+	_ = proc.Run()
+	<-done
+	<-done
+	<-done
+	/*if err != nil {*/
+		/*fatal(err)*/
+	/*}*/
 }

@@ -19,6 +19,11 @@ func fatal(any interface{}) {
 	panic(any)
 }
 
+func shplit(str string) []string {
+	// FIXME
+	return []string{str}
+}
+
 func read16_be(data []byte) int16 {
 	return int16(data[0]) << 8 | int16(data[1])
 }
@@ -90,9 +95,15 @@ func main() {
 	// First, we see which program needs to be launched
 	flag.Parse()
 	args := flag.Args()
+	/*fmt.Printf("%#v\n", args)*/
 
 	if len(args) < 1 {
 		die("Not enough arguments.\nSynopsis: goon <program> [arg1] ...")
+	}
+
+	if len(args) == 1 {
+		// We need to parse the arguments ourselves
+		args = shplit(args[0])
 	}
 
 	proc := exec.Command(args[0], args[1:]...)

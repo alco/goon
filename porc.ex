@@ -156,8 +156,12 @@ defmodule Porc do
   end
 
   defp open_port(opts) do
-    go = './goon' #:os.find_executable 'go'
-    Port.open { :spawn_executable, go }, opts
+    goon = if File.exists?("goon") do
+      'goon'
+    else
+      :os.find_executable 'goon'
+    end
+    Port.open { :spawn_executable, goon }, opts
   end
 
   # Processes port options opens a port. Used in both call() and spawn()

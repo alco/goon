@@ -62,22 +62,22 @@ defmodule Porc do
     # Send EOF to indicate the end of input or no input
     Port.command(port, "")
 
-    collect_output(port, output, error, 0)
+    collect_output(port, output, error)
   end
 
   # Runs in a recursive loop until the process exits
-  defp collect_output(port, output, error, status) do
+  defp collect_output(port, output, error) do
     #IO.puts "Collecting output"
     receive do
       { ^port, {:data, <<?o, data :: binary>>} } ->
         #IO.puts "Did receive out"
         output = process_port_output(output, data, :stdout)
-        collect_output(port, output, error, status)
+        collect_output(port, output, error)
 
       { ^port, {:data, <<?e, data :: binary>>} } ->
         #IO.puts "Did receive err"
         error = process_port_output(error, data, :stderr)
-        collect_output(port, output, error, status)
+        collect_output(port, output, error)
 
       { ^port, {:exit_status, status} } ->
         { status, flatten(output), flatten(error) }
@@ -85,6 +85,11 @@ defmodule Porc do
       #{ ^port, :eof } ->
         #collect_output(port, output, out_data, err_data, true, did_see_exit, status)
     end
+  end
+
+  defp process_port_output(nil, _, _) do
+    # discard data
+    nil
   end
 
   defp process_port_output({ :buffer, out_data }, in_data, _) do
@@ -130,19 +135,28 @@ defmodule Porc do
   end
 
   defp port_options(options, cmd, args) do
-    #p = Porc.call("cat", in: "Hello world!", out: :buffer)
-    ## ==>
-    #p = Port.open({:spawn_executable, '/usr/local/bin/go'}, [{:args, ["run", "main.go", "cat"]}, :binary, {:packet, 2}, :exit_status])
+    flags = get_flags(options)
+    #[{:args, List.flatten([["run", "main.go"], flags, ["--"], [cmd | args]])},
+    [{:args, List.flatten([flags, ["--"], [cmd | args]])},
+     :binary, {:packet, 2}, :exit_status, :use_stdio, :hide]
+  end
 
-    port_opts = [{:args, ["run", "main.go"] ++ [cmd | args]}, :binary, {:packet, 2}, :exit_status, :use_stdio, :hide]
-    if options[:err] == :out do
-      port_opts = [:stderr_to_stdio | port_opts]
+  defp get_flags(options) do
+    [case options[:out] do
+      nil  -> ["-out", ""]
+      :err -> ["-out", "err"]
+      _    -> []
     end
-    port_opts
+    |
+    case options[:err] do
+      nil  -> ["-err", ""]
+      :out -> ["-err", "out"]
+      _    -> []
+    end]
   end
 
   defp open_port(opts) do
-    go = :os.find_executable 'go'
+    go = './goon' #:os.find_executable 'go'
     Port.open { :spawn_executable, go }, opts
   end
 
@@ -167,19 +181,17 @@ defmodule Porc do
   end
 
   defp process_output_opts(opt) do
-    case opt do
-      :err                          -> nil
-      nil                           -> { :buffer, "" }
-      :buffer                       -> { :buffer, "" }
-      { :file, fid }                -> { :file, fid }
-      { pid, ref } when is_pid(pid) -> { pid, ref }
-    end
+    process_out_opts(opt, :err)
   end
 
   defp process_error_opts(opt) do
+    process_out_opts(opt, :out)
+  end
+
+  defp process_out_opts(opt, typ) do
     case opt do
-      :out                          -> nil
-      nil                           -> { :buffer, "" }
+      ^typ                          -> nil
+      nil                           -> nil
       :buffer                       -> { :buffer, "" }
       { :file, fid }                -> { :file, fid }
       { pid, ref } when is_pid(pid) -> { pid, ref }

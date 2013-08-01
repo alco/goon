@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 )
 
 const kOutputBufferSize = 1024
@@ -33,7 +34,7 @@ func write16_be(data []byte, num int) {
 	data[1] = byte(num)
 }
 
-func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) {
+func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) int {
 	pipe, err := proc.StdinPipe()
 	if err != nil {
 		fatal(err)
@@ -65,12 +66,24 @@ func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) {
 		}
 		done <- true
 	}()
+
+	return 1
 }
 
-func wrapOut(pipe io.ReaderCloser, outstream io.Writer, done chan bool) {
+func wrapOut(pipe io.ReadCloser, outstream io.Writer, out string, done chan bool) int {
+	var char byte
+
+	if out == "out" {
+		char = 'o'
+	} else if out == "err" {
+		char = 'e'
+	} else {
+		fatal("undefined redirect")
+	}
+
 	go func() {
 		buf := make([]byte, kOutputBufferSize)
-		buf[2] = 'o'
+		buf[2] = char
 		for {
 			nbytes, err := pipe.Read(buf[3:])
 			if nbytes > 0 {
@@ -87,29 +100,37 @@ func wrapOut(pipe io.ReaderCloser, outstream io.Writer, done chan bool) {
 		}
 		done <- true
 	}()
+
+	return 1
 }
 
-func wrapStdout(proc *exec.Cmd, stdout io.Writer, done chan bool) {
+func wrapStdout(proc *exec.Cmd, outstream io.Writer, out string, done chan bool) int {
 	pipe, err := proc.StdoutPipe()
 	if err != nil {
 		fatal(err)
 	}
-	wrapOut(pipe, stdout, done)
+	return wrapOut(pipe, outstream, out, done)
 }
 
-func wrapStderr(proc *exec.Cmd, stderr io.Writer, done chan bool) {
+func wrapStderr(proc *exec.Cmd, outstream io.Writer, out string, done chan bool) int {
 	pipe, err := proc.StderrPipe()
 	if err != nil {
 		fatal(err)
 	}
-	wrapOut(pipe, stderr, done)
+	return wrapOut(pipe, outstream, out, done)
 }
+
+var outFlag = flag.String("out", "out", "specify redirection or supression of stdout")
+var errFlag = flag.String("err", "err", "specify redirection or supression of stderr")
 
 func main() {
 	// First, we see which program needs to be launched
 	flag.Parse()
 	args := flag.Args()
-	/*fmt.Printf("%#v\n", args)*/
+	/*fmt.Fprintf(os.Stderr, "%#v\n", args)*/
+	/*fmt.Fprintf(os.Stderr, "%#v\n", *outFlag)*/
+	/*fmt.Fprintf(os.Stderr, "%#v\n", *errFlag)*/
+	/*return*/
 
 	if len(args) < 1 {
 		die("Not enough arguments.\nSynopsis: goon <program> [arg1] ...")
@@ -121,17 +142,49 @@ func main() {
 	}
 
 	done := make(chan bool)
+	done_count := 0
+
 	proc := exec.Command(args[0], args[1:]...)
-	wrapStdin(proc, os.Stdin, done)
-	wrapStdout(proc, os.Stdout, done)
-	wrapStderr(proc, os.Stdout, done)
+	done_count += wrapStdin(proc, os.Stdin, done)
+
+	do_pipe_out := (*outFlag == "out")
+	if *outFlag == "err" {
+		if *errFlag == "err" {
+			do_pipe_out = true
+		} else if len(*errFlag) != 0 {
+			fatal("Invalid redirection spec")
+		}
+	}
+	if do_pipe_out {
+		done_count += wrapStdout(proc, os.Stdout, *outFlag, done)
+	}
+
+	do_pipe_err := (*errFlag == "err")
+	if *errFlag == "out" {
+		if *outFlag == "out" {
+			do_pipe_err = true
+		} else if len(*outFlag) != 0 {
+			fatal("Invalid redirection spec")
+		}
+	}
+	if do_pipe_err {
+		done_count += wrapStderr(proc, os.Stdout, *errFlag, done)
+	}
 
 	// Now we're ready to start the requested program
-	_ = proc.Run()
-	<-done
-	<-done
-	<-done
-	/*if err != nil {*/
-		/*fatal(err)*/
-	/*}*/
+	err := proc.Run()
+	for i := 0; i < done_count; i++ {
+		<-done
+	}
+	if err != nil {
+		switch v := err.(type) {
+		case *exec.ExitError:
+			switch s := v.ProcessState.Sys().(type) {
+			case syscall.WaitStatus:
+				os.Exit(s.ExitStatus())
+			}
+		}
+		os.Exit(1)
+	}
+	/*fmt.Printf("%#v\n", err)*/
 }

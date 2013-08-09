@@ -11,6 +11,11 @@ import (
 
 const kOutputBufferSize = 1024
 
+const (
+	kProtocolOneToOne = iota
+	kProtocol2Length
+)
+
 func die(any interface{}) {
 	fmt.Printf("%v\n", any);
 	os.Exit(1)
@@ -34,40 +39,50 @@ func write16_be(data []byte, num int) {
 	data[1] = byte(num)
 }
 
-func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) int {
-	pipe, err := proc.StdinPipe()
-	if err != nil {
-		fatal(err)
-	}
-
-	go func() {
-		buf := make([]byte, 2)
-		for {
-			nbytes, err := io.ReadFull(stdin, buf)
-			if err != nil {
-				if err == io.EOF && nbytes == 0 {
-					pipe.Close()
-					break
-				}
-				fatal(err)
-			}
-
-			length := read16_be(buf)
-			if length == 0 {
-				// EOF
+func stdin_2l(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
+	buf := make([]byte, 2)
+	for {
+		nbytes, err := io.ReadFull(stdin, buf)
+		if err != nil {
+			if err == io.EOF && nbytes == 0 {
 				pipe.Close()
 				break
 			}
-
-			_, err = io.CopyN(pipe, stdin, int64(length))
-			if err != nil {
-				fatal(err)
-			}
+			fatal(err)
 		}
-		done <- true
-	}()
 
-	return 1
+		length := read16_be(buf)
+		if length == 0 {
+			// EOF
+			pipe.Close()
+			break
+		}
+
+		_, err = io.CopyN(pipe, stdin, int64(length))
+		if err != nil {
+			fatal(err)
+		}
+	}
+	done <- true
+}
+
+func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool, proto int) int {
+	if proto == kProtocolOneToOne {
+		proc.Stdin = stdin
+		return 0
+	}
+
+	if proto == kProtocol2Length {
+		pipe, err := proc.StdinPipe()
+		if err != nil {
+			fatal(err)
+		}
+		go stdin_2l(pipe, stdin, done)
+		return 1
+	}
+
+	fatal("Unknown protocol")
+	return 0
 }
 
 func wrapOut(pipe io.ReadCloser, outstream io.Writer, out string, done chan bool) int {
@@ -104,36 +119,81 @@ func wrapOut(pipe io.ReadCloser, outstream io.Writer, out string, done chan bool
 	return 1
 }
 
-func wrapStdout(proc *exec.Cmd, outstream io.Writer, out string, done chan bool) int {
-	pipe, err := proc.StdoutPipe()
-	if err != nil {
-		fatal(err)
+func wrapStdout(proc *exec.Cmd, outstream io.Writer, errstream io.Writer, out string, done chan bool, proto int) int {
+	if proto == kProtocolOneToOne {
+		if out == "out" {
+			proc.Stdout = outstream
+		} else if out == "err" {
+			proc.Stdout = errstream
+		} else {
+			fatal("undefined redirect")
+		}
+		return 0
 	}
-	return wrapOut(pipe, outstream, out, done)
+
+	if proto == kProtocol2Length {
+		pipe, err := proc.StdoutPipe()
+		if err != nil {
+			fatal(err)
+		}
+		return wrapOut(pipe, outstream, out, done)
+	}
+
+	fatal("Unknown protocol")
+	return 0
 }
 
-func wrapStderr(proc *exec.Cmd, outstream io.Writer, out string, done chan bool) int {
-	pipe, err := proc.StderrPipe()
-	if err != nil {
-		fatal(err)
+func wrapStderr(proc *exec.Cmd, outstream io.Writer, errstream io.Writer, out string, done chan bool, proto int) int {
+	if proto == kProtocolOneToOne {
+		if out == "out" {
+			proc.Stderr = outstream
+		} else if out == "err" {
+			proc.Stderr = errstream
+		} else {
+			fatal("undefined redirect")
+		}
+		return 0
 	}
-	return wrapOut(pipe, outstream, out, done)
+
+	if proto == kProtocol2Length {
+		pipe, err := proc.StderrPipe()
+		if err != nil {
+			fatal(err)
+		}
+		return wrapOut(pipe, outstream, out, done)
+	}
+
+	fatal("Unknown protocol")
+	return 0
+}
+
+func shouldWrapOut(out string, err string, opt_out string, opt_err string) bool {
+	result := (out == opt_out)
+	if out == opt_err {
+		if err == opt_err {
+			result = true
+		} else if len(err) != 0 {
+			fatal("Invalid redirection spec")
+		}
+	}
+	return result
 }
 
 var outFlag = flag.String("out", "out", "specify redirection or supression of stdout")
 var errFlag = flag.String("err", "err", "specify redirection or supression of stderr")
+var protoFlag = flag.String("proto", "1to1", "which protocol to use for communication (supported values: 1to1, 2l)")
 
 func main() {
-	// First, we see which program needs to be launched
 	flag.Parse()
 	args := flag.Args()
+
 	/*fmt.Fprintf(os.Stderr, "%#v\n", args)*/
 	/*fmt.Fprintf(os.Stderr, "%#v\n", *outFlag)*/
 	/*fmt.Fprintf(os.Stderr, "%#v\n", *errFlag)*/
 	/*return*/
 
 	if len(args) < 1 {
-		die("Not enough arguments.\nSynopsis: goon <program> [arg1] ...")
+		die("Not enough arguments.\nSynopsis: goon [opts] <program> [arg1] ...")
 	}
 
 	if len(args) == 1 {
@@ -141,34 +201,26 @@ func main() {
 		args = shplit(args[0])
 	}
 
+	var proto int
+	switch *protoFlag {
+	case "1to1":
+		proto = kProtocolOneToOne
+	case "2l":
+		proto = kProtocol2Length
+	default:
+		fatal("Unknown protocol")
+	}
+
 	done := make(chan bool)
 	done_count := 0
 
 	proc := exec.Command(args[0], args[1:]...)
-	done_count += wrapStdin(proc, os.Stdin, done)
-
-	do_pipe_out := (*outFlag == "out")
-	if *outFlag == "err" {
-		if *errFlag == "err" {
-			do_pipe_out = true
-		} else if len(*errFlag) != 0 {
-			fatal("Invalid redirection spec")
-		}
+	done_count += wrapStdin(proc, os.Stdin, done, proto)
+	if shouldWrapOut(*outFlag, *errFlag, "out", "err") {
+		done_count += wrapStdout(proc, os.Stdout, os.Stderr, *outFlag, done, proto)
 	}
-	if do_pipe_out {
-		done_count += wrapStdout(proc, os.Stdout, *outFlag, done)
-	}
-
-	do_pipe_err := (*errFlag == "err")
-	if *errFlag == "out" {
-		if *outFlag == "out" {
-			do_pipe_err = true
-		} else if len(*outFlag) != 0 {
-			fatal("Invalid redirection spec")
-		}
-	}
-	if do_pipe_err {
-		done_count += wrapStderr(proc, os.Stdout, *errFlag, done)
+	if shouldWrapOut(*errFlag, *outFlag, "err", "out") {
+		done_count += wrapStderr(proc, os.Stdout, os.Stderr, *errFlag, done, proto)
 	}
 
 	// Now we're ready to start the requested program
@@ -176,6 +228,8 @@ func main() {
 	for i := 0; i < done_count; i++ {
 		<-done
 	}
+
+	// Determine the exit status
 	if err != nil {
 		switch v := err.(type) {
 		case *exec.ExitError:

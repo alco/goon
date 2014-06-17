@@ -178,59 +178,55 @@ func shouldWrapOut(out string, err string, opt_out string, opt_err string) bool 
 	return result
 }
 
+var protoFlag = flag.String("proto", "0.0", "protocol version (one of: 0.0)")
 var outFlag = flag.String("out", "out", "specify redirection or supression of stdout")
 var errFlag = flag.String("err", "err", "specify redirection or supression of stderr")
-var protoFlag = flag.String("proto", "1to1", "which protocol to use for communication (supported values: 1to1, 2l)")
 
 func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	/*fmt.Fprintf(os.Stderr, "%#v\n", args)*/
-	/*fmt.Fprintf(os.Stderr, "%#v\n", *outFlag)*/
-	/*fmt.Fprintf(os.Stderr, "%#v\n", *errFlag)*/
+	fmt.Fprintf(os.Stderr, "%#v\n", args)
+	fmt.Fprintf(os.Stderr, "%#v\n", *outFlag)
+	fmt.Fprintf(os.Stderr, "%#v\n", *errFlag)
+	fmt.Fprintf(os.Stderr, "%#v\n", *protoFlag)
 	/*return*/
 
 	if len(args) < 1 {
-		die("Not enough arguments.\nSynopsis: goon [opts] <program> [arg1] ...")
+		die("Not enough arguments.\nSynopsis: goon [opts] <program> [<arg>...]")
 	}
 
-	if len(args) == 1 {
-		// We need to parse the arguments ourselves
-		args = shplit(args[0])
-	}
-
-	var proto int
+	var impl func(*string, *string, []string) error
 	switch *protoFlag {
-	case "1to1":
-		proto = kProtocolOneToOne
-	case "2l":
-		proto = kProtocol2Length
+	case "0.0":
+		impl = proto_0_0
 	default:
-		fatal("Unknown protocol")
+		die("Unknown protocol")
 	}
 
-	done := make(chan bool)
-	done_count := 0
+	err := impl(outFlag, errFlag, args)
 
-	proc := exec.Command(args[0], args[1:]...)
-	done_count += wrapStdin(proc, os.Stdin, done, proto)
-	if shouldWrapOut(*outFlag, *errFlag, "out", "err") {
-		done_count += wrapStdout(proc, os.Stdout, os.Stderr, *outFlag, done, proto)
-	}
-	if shouldWrapOut(*errFlag, *outFlag, "err", "out") {
-		done_count += wrapStderr(proc, os.Stdout, os.Stderr, *errFlag, done, proto)
-	}
+	/*done := make(chan bool)*/
+	/*done_count := 0*/
 
-	// Now we're ready to start the requested program
-	err := proc.Run()
-	for i := 0; i < done_count; i++ {
-		<-done
-	}
+	/*proc := exec.Command(args[0], args[1:]...)*/
+	/*done_count += wrapStdin(proc, os.Stdin, done, proto)*/
+	/*if shouldWrapOut(*outFlag, *errFlag, "out", "err") {*/
+		/*done_count += wrapStdout(proc, os.Stdout, os.Stderr, *outFlag, done, proto)*/
+	/*}*/
+	/*if shouldWrapOut(*errFlag, *outFlag, "err", "out") {*/
+		/*done_count += wrapStderr(proc, os.Stdout, os.Stderr, *errFlag, done, proto)*/
+	/*}*/
+
+	/*// Now we're ready to start the requested program*/
+	/*err := proc.Run()*/
+	/*for i := 0; i < done_count; i++ {*/
+		/*<-done*/
+	/*}*/
 
 	// Determine the exit status
 	if err != nil {
+		fmt.Printf("%#v\n", err)
 		os.Exit(get_exit_status(err))
 	}
-	/*fmt.Printf("%#v\n", err)*/
 }

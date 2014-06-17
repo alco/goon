@@ -10,11 +10,6 @@ import (
 
 const kOutputBufferSize = 1024
 
-const (
-	kProtocolOneToOne = iota
-	kProtocol2Length
-)
-
 func die(any interface{}) {
 	fmt.Printf("%v\n", any);
 	os.Exit(1)
@@ -65,23 +60,13 @@ func stdin_2l(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 	done <- true
 }
 
-func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool, proto int) int {
-	if proto == kProtocolOneToOne {
-		proc.Stdin = stdin
-		return 0
+func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) int {
+	pipe, err := proc.StdinPipe()
+	if err != nil {
+		fatal(err)
 	}
-
-	if proto == kProtocol2Length {
-		pipe, err := proc.StdinPipe()
-		if err != nil {
-			fatal(err)
-		}
-		go stdin_2l(pipe, stdin, done)
-		return 1
-	}
-
-	fatal("Unknown protocol")
-	return 0
+	go stdin_2l(pipe, stdin, done)
+	return 1
 }
 
 func wrapOut(pipe io.ReadCloser, outstream io.Writer, out string, done chan bool) int {
@@ -91,6 +76,8 @@ func wrapOut(pipe io.ReadCloser, outstream io.Writer, out string, done chan bool
 		char = 'o'
 	} else if out == "err" {
 		char = 'e'
+	} else if out == "nil" {
+		return 0
 	} else {
 		fatal("undefined redirect")
 	}
@@ -109,7 +96,13 @@ func wrapOut(pipe io.ReadCloser, outstream io.Writer, out string, done chan bool
 				break
 			}
 			if err != nil {
-				fatal(err)
+				switch err.(type) {
+				case *os.PathError:
+					// known error
+					break
+				default:
+					panic(err)
+				}
 			}
 		}
 		done <- true
@@ -118,52 +111,20 @@ func wrapOut(pipe io.ReadCloser, outstream io.Writer, out string, done chan bool
 	return 1
 }
 
-func wrapStdout(proc *exec.Cmd, outstream io.Writer, errstream io.Writer, out string, done chan bool, proto int) int {
-	if proto == kProtocolOneToOne {
-		if out == "out" {
-			proc.Stdout = outstream
-		} else if out == "err" {
-			proc.Stdout = errstream
-		} else {
-			fatal("undefined redirect")
-		}
-		return 0
+func wrapStdout(proc *exec.Cmd, outstream io.Writer, out string, done chan bool) int {
+	pipe, err := proc.StdoutPipe()
+	if err != nil {
+		fatal(err)
 	}
-
-	if proto == kProtocol2Length {
-		pipe, err := proc.StdoutPipe()
-		if err != nil {
-			fatal(err)
-		}
-		return wrapOut(pipe, outstream, out, done)
-	}
-
-	fatal("Unknown protocol")
-	return 0
+	return wrapOut(pipe, outstream, out, done)
 }
 
-func wrapStderr(proc *exec.Cmd, outstream io.Writer, errstream io.Writer, out string, done chan bool, proto int) int {
-	if proto == kProtocolOneToOne {
-		if out == "out" {
-			proc.Stderr = outstream
-		} else if out == "err" {
-			proc.Stderr = errstream
-		} else {
-			fatal("undefined redirect")
-		}
-		return 0
+func wrapStderr(proc *exec.Cmd, outstream io.Writer, errstream io.Writer, out string, done chan bool) int {
+	pipe, err := proc.StderrPipe()
+	if err != nil {
+		fatal(err)
 	}
-
-	if proto == kProtocol2Length {
-		pipe, err := proc.StderrPipe()
-		if err != nil {
-			fatal(err)
-		}
-		return wrapOut(pipe, outstream, out, done)
-	}
-
-	fatal("Unknown protocol")
-	return 0
+	return wrapOut(pipe, outstream, out, done)
 }
 
 func shouldWrapOut(out string, err string, opt_out string, opt_err string) bool {
@@ -179,50 +140,34 @@ func shouldWrapOut(out string, err string, opt_out string, opt_err string) bool 
 }
 
 var protoFlag = flag.String("proto", "0.0", "protocol version (one of: 0.0)")
+var inFlag  = flag.String("in", "nil", "specify whether stdin will be used")
 var outFlag = flag.String("out", "out", "specify redirection or supression of stdout")
 var errFlag = flag.String("err", "err", "specify redirection or supression of stderr")
+var dirFlag = flag.String("dir", ".", "specify working directory for the spawned process")
 
 func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	fmt.Fprintf(os.Stderr, "%#v\n", args)
-	fmt.Fprintf(os.Stderr, "%#v\n", *outFlag)
-	fmt.Fprintf(os.Stderr, "%#v\n", *errFlag)
-	fmt.Fprintf(os.Stderr, "%#v\n", *protoFlag)
+	/*fmt.Fprintf(os.Stderr, "%#v\n", args)*/
+	/*fmt.Fprintf(os.Stderr, "%#v\n", *outFlag)*/
+	/*fmt.Fprintf(os.Stderr, "%#v\n", *errFlag)*/
+	/*fmt.Fprintf(os.Stderr, "%#v\n", *protoFlag)*/
 	/*return*/
 
 	if len(args) < 1 {
 		die("Not enough arguments.\nSynopsis: goon [opts] <program> [<arg>...]")
 	}
 
-	var impl func(*string, *string, []string) error
+	var protoImpl func(string, string, string, string, []string) error
 	switch *protoFlag {
 	case "0.0":
-		impl = proto_0_0
+		protoImpl = proto_0_0
 	default:
 		die("Unknown protocol")
 	}
 
-	err := impl(outFlag, errFlag, args)
-
-	/*done := make(chan bool)*/
-	/*done_count := 0*/
-
-	/*proc := exec.Command(args[0], args[1:]...)*/
-	/*done_count += wrapStdin(proc, os.Stdin, done, proto)*/
-	/*if shouldWrapOut(*outFlag, *errFlag, "out", "err") {*/
-		/*done_count += wrapStdout(proc, os.Stdout, os.Stderr, *outFlag, done, proto)*/
-	/*}*/
-	/*if shouldWrapOut(*errFlag, *outFlag, "err", "out") {*/
-		/*done_count += wrapStderr(proc, os.Stdout, os.Stderr, *errFlag, done, proto)*/
-	/*}*/
-
-	/*// Now we're ready to start the requested program*/
-	/*err := proc.Run()*/
-	/*for i := 0; i < done_count; i++ {*/
-		/*<-done*/
-	/*}*/
+	err := protoImpl(*inFlag, *outFlag, *errFlag, *dirFlag, args)
 
 	// Determine the exit status
 	if err != nil {

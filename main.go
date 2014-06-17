@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"syscall"
 )
 
 const kOutputBufferSize = 1024
@@ -231,14 +230,7 @@ func main() {
 
 	// Determine the exit status
 	if err != nil {
-		switch v := err.(type) {
-		case *exec.ExitError:
-			switch s := v.ProcessState.Sys().(type) {
-			case syscall.WaitStatus:
-				os.Exit(s.ExitStatus())
-			}
-		}
-		os.Exit(1)
+		os.Exit(get_exit_status(err))
 	}
 	/*fmt.Printf("%#v\n", err)*/
 }

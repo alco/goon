@@ -33,7 +33,7 @@ func write16_be(data []byte, num int) {
 	data[1] = byte(num)
 }
 
-func stdin_2l(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
+func wrapIn(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 	buf := make([]byte, 2)
 	for {
 		nbytes, err := io.ReadFull(stdin, buf)
@@ -44,10 +44,12 @@ func stdin_2l(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 			}
 			fatal(err)
 		}
+		/*fmt.Fprintf(os.Stderr, "Read %v bytes\n", nbytes)*/
 
 		length := read16_be(buf)
+		/*fmt.Fprintf(os.Stderr, "length = %v\n", length)*/
 		if length == 0 {
-			// EOF
+			// this is how Porcelain signals EOF from Elixir
 			pipe.Close()
 			break
 		}
@@ -60,12 +62,16 @@ func stdin_2l(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 	done <- true
 }
 
-func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) int {
+func wrapStdin(proc *exec.Cmd, stdin io.Reader, inFlag bool, done chan bool) int {
+	if !inFlag {
+		return 0
+	}
+
 	pipe, err := proc.StdinPipe()
 	if err != nil {
 		fatal(err)
 	}
-	go stdin_2l(pipe, stdin, done)
+	go wrapIn(pipe, stdin, done)
 	return 1
 }
 
@@ -140,7 +146,7 @@ func shouldWrapOut(out string, err string, opt_out string, opt_err string) bool 
 }
 
 var protoFlag = flag.String("proto", "0.0", "protocol version (one of: 0.0)")
-var inFlag  = flag.String("in", "nil", "specify whether stdin will be used")
+var inFlag  = flag.Bool("in", false, "specify whether stdin will be used")
 var outFlag = flag.String("out", "out", "specify redirection or supression of stdout")
 var errFlag = flag.String("err", "err", "specify redirection or supression of stderr")
 var dirFlag = flag.String("dir", ".", "specify working directory for the spawned process")
@@ -159,7 +165,7 @@ func main() {
 		die("Not enough arguments.\nSynopsis: goon [opts] <program> [<arg>...]")
 	}
 
-	var protoImpl func(string, string, string, string, []string) error
+	var protoImpl func(bool, string, string, string, []string) error
 	switch *protoFlag {
 	case "0.0":
 		protoImpl = proto_0_0

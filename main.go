@@ -8,19 +8,20 @@ import (
 
 type protoImplT func(bool, bool, string, string, []string) error
 
-const logsEnabled = false
 const usage = "Usage: goon -proto <version> [options] -- <program> [<arg>...]"
 
 var protoFlag = flag.String("proto", "", "protocol version (one of: 0.0)")
-var inFlag  = flag.Bool("in", false, "whether stdin is used")
-var outFlag = flag.Bool("out", false, "whether stdout is preserved or discarded")
-var errFlag = flag.String("err", "nil", "redirection or supression of stderr")
+var inFlag  = flag.Bool("in", false, "enable reading from stdin")
+var outFlag = flag.Bool("out", false, "output program's stdout")
+var errFlag = flag.String("err", "nil", "output or redirect stderr")
 var dirFlag = flag.String("dir", ".", "working directory for the spawned process")
+var logFlag = flag.String("log", "", "enable logging")
 
 func main() {
 	flag.Parse()
 	args := flag.Args()
 
+	initLogger(*logFlag)
 	validateOptsAndArgs(*protoFlag, args)
 
 	/* Run external program and block until it terminates */

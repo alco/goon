@@ -4,25 +4,45 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 )
 
+var logger *log.Logger
+const logsEnabled = false
+
+func init() {
+	var filename string
+	if logsEnabled {
+		filename = "goon.log"
+	} else {
+		filename = os.DevNull
+	}
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		panic(err)
+	}
+	logger = log.New(file, "goon", log.Lmicroseconds)
+}
+
 const kOutputBufferSize = 1024
 
 func die(reason string) {
+	logger.Println("dying:", reason)
 	println(reason)
 	os.Exit(-1)
 }
 
 func die_usage(reason string) {
+	logger.Println("dying:", reason)
 	println(reason)
 	println(usage)
 	os.Exit(-1)
 }
 
 func fatal(any interface{}) {
-	panic(any)
+	logger.Panicln(any)
 }
 
 func shplit(str string) []string {
@@ -41,6 +61,7 @@ func write16_be(data []byte, num int) {
 
 func wrapIn(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 	buf := make([]byte, 2)
+	logger.Println("Entering stdin loop")
 	for {
 		nbytes, err := io.ReadFull(stdin, buf)
 		if err != nil {
@@ -53,6 +74,7 @@ func wrapIn(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 		/*fmt.Fprintf(os.Stderr, "Read %v bytes\n", nbytes)*/
 
 		length := read16_be(buf)
+		logger.Printf("in: packet length = %v\n", length)
 		/*fmt.Fprintf(os.Stderr, "length = %v\n", length)*/
 		if length == 0 {
 			// this is how Porcelain signals EOF from Elixir
@@ -60,7 +82,8 @@ func wrapIn(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 			break
 		}
 
-		_, err = io.CopyN(pipe, stdin, int64(length))
+		nnbytes, err := io.CopyN(pipe, stdin, int64(length))
+		logger.Printf("in: copied %v bytes\n", nnbytes)
 		if err != nil {
 			fatal(err)
 		}
@@ -97,8 +120,10 @@ func wrapOut(pipe io.ReadCloser, outstream io.Writer, out string, done chan bool
 	go func() {
 		buf := make([]byte, kOutputBufferSize)
 		buf[2] = char
+		logger.Printf("Entering out loop with %v\n", out)
 		for {
 			nbytes, err := pipe.Read(buf[3:])
+			logger.Printf("out: read bytes: %v\n", nbytes)
 			if nbytes > 0 {
 				write16_be(buf[:2], nbytes+1)
 				outstream.Write(buf[:2+nbytes+1])
@@ -131,24 +156,12 @@ func wrapStdout(proc *exec.Cmd, outstream io.Writer, out string, done chan bool)
 	return wrapOut(pipe, outstream, out, done)
 }
 
-func wrapStderr(proc *exec.Cmd, outstream io.Writer, errstream io.Writer, out string, done chan bool) int {
+func wrapStderr(proc *exec.Cmd, outstream io.Writer, out string, done chan bool) int {
 	pipe, err := proc.StderrPipe()
 	if err != nil {
 		fatal(err)
 	}
 	return wrapOut(pipe, outstream, out, done)
-}
-
-func shouldWrapOut(out string, err string, opt_out string, opt_err string) bool {
-	result := (out == opt_out)
-	if out == opt_err {
-		if err == opt_err {
-			result = true
-		} else if len(err) != 0 {
-			fatal("Invalid redirection spec")
-		}
-	}
-	return result
 }
 
 var protoFlag = flag.String("proto", "", "protocol version (one of: 0.0)")

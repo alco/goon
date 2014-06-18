@@ -12,14 +12,16 @@ func proto_0_0(inFlag bool, outFlag, errFlag, workdir string, args []string) err
 	done := make(chan bool)
 	done_count := 0
 	done_count += wrapStdin(proc, os.Stdin, inFlag, done)
-	done_count += wrapStdout(proc, os.Stdout, outFlag, done)
-	done_count += wrapStderr(proc, os.Stdout, errFlag, done)
+	if opt := checkOutOpt(outFlag); opt != 0 {
+		done_count += wrapStdout(proc, os.Stdout, outFlag, done)
+	}
+	if opt := checkOutOpt(errFlag); opt != 0 {
+		done_count += wrapStderr(proc, os.Stdout, errFlag, done)
+	}
 
-	// Now we're ready to start the requested program
 	err := proc.Run()
 	for i := 0; i < done_count; i++ {
 		<-done
 	}
-
 	return err
 }

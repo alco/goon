@@ -10,19 +10,22 @@ func proto_0_0(inFlag, outFlag bool, errFlag, workdir string, args []string) err
 	proc.Dir = workdir
 	logger.Printf("Command path: %v\n", proc.Path)
 
+	const stdoutMarker = 0x00
+	const stderrMarker = 0x01
+
 	done := make(chan bool)
 	done_count := 0
 	done_count += wrapStdin(proc, os.Stdin, inFlag, done)
 	if outFlag {
-		done_count += wrapStdout(proc, os.Stdout, 'o', done)
+		done_count += wrapStdout(proc, os.Stdout, stdoutMarker, done)
 	}
 	switch errFlag {
 	case "out":
 		if outFlag {
-			done_count += wrapStderr(proc, os.Stdout, 'o', done)
+			done_count += wrapStderr(proc, os.Stdout, stdoutMarker, done)
 		}
 	case "err":
-		done_count += wrapStderr(proc, os.Stdout, 'e', done)
+		done_count += wrapStderr(proc, os.Stdout, stderrMarker, done)
 	case "nil":
 		// no-op
 	default:

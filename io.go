@@ -77,8 +77,7 @@ func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 //     2-byte-length packet
 //   * 1 byte is used for framing, so it has to be included in the total length
 //
-const kOutputBufferSize = 1<<16
-var outBuf [kOutputBufferSize]byte
+var outBuf [1<<16]byte
 
 func outLoop(pipe io.ReadCloser, outstream io.Writer, char byte, done chan bool) {
 	buf := outBuf

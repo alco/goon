@@ -16,11 +16,16 @@ func proto_0_0(inFlag, outFlag bool, errFlag, workdir string, args []string) err
 	if outFlag {
 		done_count += wrapStdout(proc, os.Stdout, 'o', done)
 	}
-	if errFlag == "out" && outFlag {
-		done_count += wrapStderr(proc, os.Stdout, 'o', done)
-	} else if errFlag == "err" {
+	switch errFlag {
+	case "out":
+		if outFlag {
+			done_count += wrapStderr(proc, os.Stdout, 'o', done)
+		}
+	case "err":
 		done_count += wrapStderr(proc, os.Stdout, 'e', done)
-	} else if errFlag != "nil" {
+	case "nil":
+		// no-op
+	default:
 		fmt.Fprintf(os.Stderr, "undefined redirect: '%v'\n", errFlag)
 		fatal("undefined redirect")
 	}

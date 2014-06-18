@@ -78,9 +78,10 @@ func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 //   * 1 byte is used for framing, so it has to be included in the total length
 //
 const kOutputBufferSize = 1<<16
+var outBuf [kOutputBufferSize]byte
 
 func outLoop(pipe io.ReadCloser, outstream io.Writer, char byte, done chan bool) {
-	buf := make([]byte, kOutputBufferSize)
+	buf := outBuf
 	buf[2] = char
 	logger.Printf("Entering out loop with %v\n", char)
 	for {

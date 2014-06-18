@@ -10,9 +10,15 @@ import (
 
 const kOutputBufferSize = 1024
 
-func die(any interface{}) {
-	fmt.Printf("%v\n", any);
-	os.Exit(1)
+func die(reason string) {
+	println(reason)
+	os.Exit(-1)
+}
+
+func die_usage(reason string) {
+	println(reason)
+	println(usage)
+	os.Exit(-1)
 }
 
 func fatal(any interface{}) {
@@ -145,39 +151,43 @@ func shouldWrapOut(out string, err string, opt_out string, opt_err string) bool 
 	return result
 }
 
-var protoFlag = flag.String("proto", "0.0", "protocol version (one of: 0.0)")
+var protoFlag = flag.String("proto", "", "protocol version (one of: 0.0)")
 var inFlag  = flag.Bool("in", false, "specify whether stdin will be used")
 var outFlag = flag.String("out", "out", "specify redirection or supression of stdout")
 var errFlag = flag.String("err", "err", "specify redirection or supression of stderr")
 var dirFlag = flag.String("dir", ".", "specify working directory for the spawned process")
 
+const usage = "Usage: goon -proto <version> [options] -- <program> [<arg>...]"
+
 func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	/*fmt.Fprintf(os.Stderr, "%#v\n", args)*/
-	/*fmt.Fprintf(os.Stderr, "%#v\n", *outFlag)*/
-	/*fmt.Fprintf(os.Stderr, "%#v\n", *errFlag)*/
-	/*fmt.Fprintf(os.Stderr, "%#v\n", *protoFlag)*/
-	/*return*/
-
-	if len(args) < 1 {
-		die("Not enough arguments.\nSynopsis: goon [opts] <program> [<arg>...]")
+	/* Validate options and arguments */
+	if *protoFlag == "" {
+		die_usage("Please specify the protocol version.")
 	}
 
+	if len(args) < 1 {
+		die_usage("Not enough arguments.")
+	}
+
+	/* Choose protocol implementation */
 	var protoImpl func(bool, string, string, string, []string) error
 	switch *protoFlag {
 	case "0.0":
 		protoImpl = proto_0_0
 	default:
-		die("Unknown protocol")
+		reason := fmt.Sprintf("Unsupported protocol version: %v", *protoFlag)
+		die(reason)
 	}
 
+	/* Run external program and block until it terminates */
 	err := protoImpl(*inFlag, *outFlag, *errFlag, *dirFlag, args)
 
-	// Determine the exit status
+	/* Determine the exit status */
 	if err != nil {
-		fmt.Printf("%#v\n", err)
+		//fmt.Printf("%#v\n", err)
 		os.Exit(get_exit_status(err))
 	}
 }

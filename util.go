@@ -1,19 +1,19 @@
 package main
 
 import (
+	"fmt"
 	"os"
 )
 
 func die(reason string) {
 	logger.Println("dying:", reason)
-	println(reason)
+	fmt.Fprintln(os.Stderr, reason)
 	os.Exit(-1)
 }
 
 func die_usage(reason string) {
 	logger.Println("dying:", reason)
-	println(reason)
-	println(usage)
+	fmt.Fprintf(os.Stderr, "%v\n%v\n", reason, usage)
 	os.Exit(-1)
 }
 
@@ -27,7 +27,7 @@ func fatal_if(any interface{}) {
 	}
 }
 
-func shplit(str string) []string {
-	// FIXME
-	return []string{str}
-}
+/*func shplit(str string) []string {*/
+	/*// FIXME*/
+	/*return []string{str}*/
+/*}*/

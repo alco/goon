@@ -26,10 +26,7 @@ func main() {
 
 	/* Run external program and block until it terminates */
 	err := findProtocolImpl(*protoFlag)(*inFlag, *outFlag, *errFlag, *dirFlag, args)
-
-	/* Determine the exit status */
 	if err != nil {
-		//fmt.Printf("%#v\n", err)
 		os.Exit(getExitStatus(err))
 	}
 }

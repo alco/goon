@@ -48,7 +48,6 @@ func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 	for {
 		bytes_read, read_err := io.ReadFull(stdin, buf)
 		if read_err == io.EOF && bytes_read == 0 {
-			pipe.Close()
 			break
 		}
 		fatal_if(read_err)
@@ -57,7 +56,6 @@ func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 		logger.Printf("in: packet length = %v\n", length)
 		if length == 0 {
 			// this is how Porcelain signals EOF from Elixir
-			pipe.Close()
 			break
 		}
 
@@ -65,6 +63,7 @@ func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 		logger.Printf("in: copied %v bytes\n", bytes_written)
 		fatal_if(write_err)
 	}
+	pipe.Close()
 	done <- true
 }
 
@@ -92,20 +91,15 @@ func outLoop(pipe io.ReadCloser, outstream io.Writer, char byte, done chan bool)
 			logger.Printf("out: written bytes: %v\n", bytes_written)
 			fatal_if(write_err)
 		}
-		if read_err == io.EOF /*|| bytes_read == 0*/ {
-			// !!!
-			// The note below is currently irrelevant, but left here in case
-			// the bug reappers in the future.
-			// !!!
-
+		if read_err == io.EOF || bytes_read == 0 {
 			// From io.Reader docs:
 			//
 			//   Implementations of Read are discouraged from returning a zero
 			//   byte count with a nil error, and callers should treat that
 			//   situation as a no-op.
 			//
-			// In this case it appears that 0 bytes may be returned
-			// indefinitely when reading from stderr. Therefore we close the pipe.
+			// In this case it appears that 0 bytes may sometimes be returned
+			// indefinitely. Therefore we close the pipe.
 			if read_err == io.EOF {
 				logger.Println("Encountered EOF on input")
 			} else {

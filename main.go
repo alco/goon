@@ -71,14 +71,12 @@ func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 	buf := make([]byte, 2)
 	logger.Println("Entering stdin loop")
 	for {
-		nbytes, err := io.ReadFull(stdin, buf)
-		if err != nil {
-			if err == io.EOF && nbytes == 0 {
-				pipe.Close()
-				break
-			}
-			fatal(err)
+		bytes_read, read_err := io.ReadFull(stdin, buf)
+		if read_err == io.EOF && bytes_read == 0 {
+			pipe.Close()
+			break
 		}
+		fatal_if(read_err)
 
 		length := read16_be(buf)
 		logger.Printf("in: packet length = %v\n", length)
@@ -88,9 +86,9 @@ func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 			break
 		}
 
-		nnbytes, err := io.CopyN(pipe, stdin, int64(length))
-		logger.Printf("in: copied %v bytes\n", nnbytes)
-		fatal_if(err)
+		bytes_written, write_err := io.CopyN(pipe, stdin, int64(length))
+		logger.Printf("in: copied %v bytes\n", bytes_written)
+		fatal_if(write_err)
 	}
 	done <- true
 }
@@ -99,6 +97,8 @@ func wrapStdin(proc *exec.Cmd, stdin io.Reader, inFlag bool, done chan bool) int
 	if !inFlag {
 		return 0
 	}
+
+	/*fmt.Fprintf(os.Stderr, "Wrapping stdin")*/
 
 	pipe, err := proc.StdinPipe()
 	fatal_if(err)
@@ -112,77 +112,74 @@ func outLoop(pipe io.ReadCloser, outstream io.Writer, char byte, done chan bool)
 	buf[2] = char
 	logger.Printf("Entering out loop with %v\n", char)
 	for {
-		nbytes, err := pipe.Read(buf[3:])
-		logger.Printf("out: read bytes: %v\n", nbytes)
-		if nbytes > 0 {
-			write16_be(buf[:2], nbytes+1)
-			nbytes, err = outstream.Write(buf[:2+nbytes+1])
-			logger.Printf("out: written bytes: %v\n", nbytes)
-			fatal_if(err)
+		bytes_read, read_err := pipe.Read(buf[3:])
+		logger.Printf("out: read bytes: %v\n", bytes_read)
+		if bytes_read > 0 {
+			write16_be(buf[:2], bytes_read+1)
+			bytes_written, write_err := outstream.Write(buf[:2+bytes_read+1])
+			logger.Printf("out: written bytes: %v\n", bytes_written)
+			fatal_if(write_err)
 		}
+		if read_err == io.EOF /*|| bytes_read == 0*/ {
+			// !!!
+			// The note below is currently irrelevant, but left here in case
+			// the bug reappers in the future.
+			// !!!
 
-		if err == io.EOF {
+			// From io.Reader docs:
+			//
+			//   Implementations of Read are discouraged from returning a zero
+			//   byte count with a nil error, and callers should treat that
+			//   situation as a no-op.
+			//
+			// In this case it appears that 0 bytes may be returned
+			// indefinitely when reading from stderr. Therefore we close the pipe.
+			if read_err == io.EOF {
+				logger.Println("Encountered EOF on input")
+			} else {
+				logger.Println("Read 0 bytes with no error")
+			}
 			break
 		}
-		if err != nil {
-			switch err.(type) {
+		if read_err != nil {
+			switch read_err.(type) {
 			case *os.PathError:
 				// known error
 				break
 			default:
-				fatal(err)
+				fatal(read_err)
 			}
 		}
 	}
+	pipe.Close()
 	done <- true
 }
 
-func checkOutOpt(opt string) byte {
-	switch opt {
-	case "out":
-		return 'o'
-	case "err":
-		return 'e'
-	case "nil":
-		return 0
-	default:
-		fmt.Fprintf(os.Stderr, "undefined redirect: '%v'\n", opt)
-		fatal("undefined redirect")
-	}
-	return 0
-}
-
-func wrapStdout(proc *exec.Cmd, outstream io.Writer, out string, done chan bool) int {
-	opt := checkOutOpt(out)
-	if opt == 0 {
-		return 0
-	}
-
+func wrapStdout(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) int {
 	pipe, err := proc.StdoutPipe()
 	fatal_if(err)
+
+	/*fmt.Fprintf(os.Stderr, "Wrapping stdout with %v\n", opt)*/
 
 	go outLoop(pipe, outstream, opt, done)
 	return 1
 }
 
-func wrapStderr(proc *exec.Cmd, outstream io.Writer, out string, done chan bool) int {
-	opt := checkOutOpt(out)
-	if opt == 0 {
-		return 0
-	}
-
+func wrapStderr(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) int {
 	pipe, err := proc.StderrPipe()
 	fatal_if(err)
+
+	/*fmt.Fprintf(os.Stderr, "Wrapping stderr with %v\n", opt)*/
 
 	go outLoop(pipe, outstream, opt, done)
 	return 1
 }
 
 var protoFlag = flag.String("proto", "", "protocol version (one of: 0.0)")
-var inFlag  = flag.Bool("in", false, "specify whether stdin will be used")
-var outFlag = flag.String("out", "out", "specify redirection or supression of stdout")
-var errFlag = flag.String("err", "err", "specify redirection or supression of stderr")
-var dirFlag = flag.String("dir", ".", "specify working directory for the spawned process")
+var inFlag  = flag.Bool("in", false, "whether stdin is used")
+var outFlag = flag.Bool("out", false, "whether stdout is preserved or discarded")
+var errFlag = flag.String("err", "nil", "redirection or supression of stderr")
+var dirFlag = flag.String("dir", ".", "working directory for the spawned process")
 
 const usage = "Usage: goon -proto <version> [options] -- <program> [<arg>...]"
 
@@ -200,7 +197,7 @@ func main() {
 	}
 
 	/* Choose protocol implementation */
-	var protoImpl func(bool, string, string, string, []string) error
+	var protoImpl func(bool, bool, string, string, []string) error
 	switch *protoFlag {
 	case "0.0":
 		protoImpl = proto_0_0

@@ -70,7 +70,14 @@ func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 
 ///
 
-const kOutputBufferSize = 1024
+// Maximum buffer size for protocol 0.0 is 2 + 2^16-1 - 1
+//
+//   * 2 is the packet length
+//   * 2^16-1 is the maximum amount of data that can be encoded in a
+//     2-byte-length packet
+//   * 1 byte is used for framing, so it has to be included in the total length
+//
+const kOutputBufferSize = 1<<16
 
 func outLoop(pipe io.ReadCloser, outstream io.Writer, char byte, done chan bool) {
 	buf := make([]byte, kOutputBufferSize)

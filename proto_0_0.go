@@ -30,6 +30,11 @@ func proto_0_0(inFlag, outFlag bool, errFlag, workdir string, args []string) err
 	}
 
 	err := proc.Run()
+	if e, ok := err.(*exec.Error); ok {
+		logger.Printf("Run ERROR: %v\n", e)
+		os.Exit(3)
+	}
+	logger.Printf("Run FINISHED: %#v\n", err)
 	for i := 0; i < done_count; i++ {
 		<-done
 	}

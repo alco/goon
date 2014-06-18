@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-func get_exit_status(err error) int {
+func getExitStatus(err error) int {
 	switch e := err.(type) {
 	case *exec.ExitError:
 		switch s := e.ProcessState.Sys().(type) {

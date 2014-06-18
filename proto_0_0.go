@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 )
@@ -9,6 +8,7 @@ import (
 func proto_0_0(inFlag, outFlag bool, errFlag, workdir string, args []string) error {
 	proc := exec.Command(args[0], args[1:]...)
 	proc.Dir = workdir
+	logger.Printf("Command path: %v\n", proc.Path)
 
 	done := make(chan bool)
 	done_count := 0
@@ -26,8 +26,7 @@ func proto_0_0(inFlag, outFlag bool, errFlag, workdir string, args []string) err
 	case "nil":
 		// no-op
 	default:
-		fmt.Fprintf(os.Stderr, "undefined redirect: '%v'\n", errFlag)
-		fatal("undefined redirect")
+		logger.Panicf("undefined redirect: '%v'\n", errFlag)
 	}
 
 	err := proc.Run()

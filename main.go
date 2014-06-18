@@ -8,7 +8,7 @@ import (
 
 type protoImplT func(bool, bool, string, string, []string) error
 
-const logsEnabled = false
+const logsEnabled = true
 const usage = "Usage: goon -proto <version> [options] -- <program> [<arg>...]"
 
 var protoFlag = flag.String("proto", "", "protocol version (one of: 0.0)")
@@ -41,6 +41,9 @@ func validateOptsAndArgs(protoFlag string, args []string) {
 	if len(args) < 1 {
 		die_usage("Not enough arguments.")
 	}
+
+	logger.Printf("Flag values:\n  proto: %v\n  in: %v\n  out: %v\n  err: %v\n  dir: %v\nArgs: %v\n",
+				  protoFlag, *inFlag, *outFlag, *errFlag, *dirFlag, args)
 }
 
 func findProtocolImpl(flag string) (impl protoImplT) {

@@ -11,7 +11,7 @@ func wrapStdin(proc *exec.Cmd, stdin io.Reader, inFlag bool, done chan bool) int
 		return 0
 	}
 
-	/*fmt.Fprintf(os.Stderr, "Wrapping stdin")*/
+	logger.Println("Wrapping stdin")
 
 	pipe, err := proc.StdinPipe()
 	fatal_if(err)
@@ -24,7 +24,7 @@ func wrapStdout(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) i
 	pipe, err := proc.StdoutPipe()
 	fatal_if(err)
 
-	/*fmt.Fprintf(os.Stderr, "Wrapping stdout with %v\n", opt)*/
+	logger.Printf("Wrapping stdout with %v\n", opt)
 
 	go outLoop(pipe, outstream, opt, done)
 	return 1
@@ -34,7 +34,7 @@ func wrapStderr(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) i
 	pipe, err := proc.StderrPipe()
 	fatal_if(err)
 
-	/*fmt.Fprintf(os.Stderr, "Wrapping stderr with %v\n", opt)*/
+	logger.Printf("Wrapping stderr with %v\n", opt)
 
 	go outLoop(pipe, outstream, opt, done)
 	return 1

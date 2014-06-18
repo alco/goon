@@ -8,7 +8,7 @@ import (
 
 type protoImplT func(bool, bool, string, string, []string) error
 
-const logsEnabled = true
+const logsEnabled = false
 const usage = "Usage: goon -proto <version> [options] -- <program> [<arg>...]"
 
 var protoFlag = flag.String("proto", "", "protocol version (one of: 0.0)")

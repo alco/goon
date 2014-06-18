@@ -6,11 +6,7 @@ import (
 	"os/exec"
 )
 
-func wrapStdin(proc *exec.Cmd, stdin io.Reader, inFlag bool, done chan bool) int {
-	if !inFlag {
-		return 0
-	}
-
+func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) int {
 	logger.Println("Wrapping stdin")
 
 	pipe, err := proc.StdinPipe()
@@ -21,20 +17,20 @@ func wrapStdin(proc *exec.Cmd, stdin io.Reader, inFlag bool, done chan bool) int
 }
 
 func wrapStdout(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) int {
+	logger.Printf("Wrapping stdout with %v\n", opt)
+
 	pipe, err := proc.StdoutPipe()
 	fatal_if(err)
-
-	logger.Printf("Wrapping stdout with %v\n", opt)
 
 	go outLoop(pipe, outstream, opt, done)
 	return 1
 }
 
 func wrapStderr(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) int {
+	logger.Printf("Wrapping stderr with %v\n", opt)
+
 	pipe, err := proc.StderrPipe()
 	fatal_if(err)
-
-	logger.Printf("Wrapping stderr with %v\n", opt)
 
 	go outLoop(pipe, outstream, opt, done)
 	return 1

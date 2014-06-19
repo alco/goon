@@ -10,7 +10,7 @@ type protoImplT func(bool, bool, string, string, []string) error
 
 const usage = "Usage: goon -proto <version> [options] -- <program> [<arg>...]"
 
-var protoFlag = flag.String("proto", "", "protocol version (one of: 0.0)")
+var protoFlag = flag.String("proto", "", "protocol version (one of: 1.0)")
 var ackFlag = flag.String("ack", "", "arbitrary data used during handshake")
 var inFlag  = flag.Bool("in", false, "enable reading from stdin")
 var outFlag = flag.Bool("out", false, "output program's stdout")
@@ -64,8 +64,8 @@ func validateArgs(args []string) {
 
 func findProtocolImpl(flag string) (impl protoImplT) {
 	switch flag {
-	case "0.0":
-		impl = proto_0_0
+	case "1.0":
+		impl = proto_1_0
 	}
 	return
 }

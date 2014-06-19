@@ -5,7 +5,7 @@ import (
 	"os/exec"
 )
 
-func proto_0_0(inFlag, outFlag bool, errFlag, workdir string, args []string) error {
+func proto_1_0(inFlag, outFlag bool, errFlag, workdir string, args []string) error {
 	const stdoutMarker = 0x00
 	const stderrMarker = 0x01
 

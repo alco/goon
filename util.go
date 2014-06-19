@@ -6,13 +6,17 @@ import (
 )
 
 func die(reason string) {
-	logger.Println("dying:", reason)
+	if logger != nil {
+		logger.Println("dying:", reason)
+	}
 	fmt.Fprintln(os.Stderr, reason)
 	os.Exit(-1)
 }
 
 func die_usage(reason string) {
-	logger.Println("dying:", reason)
+	if logger != nil {
+		logger.Println("dying:", reason)
+	}
 	fmt.Fprintf(os.Stderr, "%v\n%v\n", reason, usage)
 	os.Exit(-1)
 }

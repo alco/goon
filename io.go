@@ -6,34 +6,31 @@ import (
 	"os/exec"
 )
 
-func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) int {
+func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) {
 	logger.Println("Wrapping stdin")
 
 	pipe, err := proc.StdinPipe()
 	fatal_if(err)
 
 	go inLoop(pipe, stdin, done)
-	return 1
 }
 
-func wrapStdout(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) int {
+func wrapStdout(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) {
 	logger.Printf("Wrapping stdout with %v\n", opt)
 
 	pipe, err := proc.StdoutPipe()
 	fatal_if(err)
 
 	go outLoop(pipe, outstream, opt, done)
-	return 1
 }
 
-func wrapStderr(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) int {
+func wrapStderr(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) {
 	logger.Printf("Wrapping stderr with %v\n", opt)
 
 	pipe, err := proc.StderrPipe()
 	fatal_if(err)
 
 	go outLoop(pipe, outstream, opt, done)
-	return 1
 }
 
 ///

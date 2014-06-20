@@ -14,27 +14,29 @@ func proto_1_0(inFlag, outFlag bool, errFlag, workdir string, args []string) err
 
 	logger.Printf("Command path: %v\n", proc.Path)
 
-	done := make(chan bool)
+	// The channel is buffered to reduce waiting time when exchanging acks
+	// between the main routine and io routines.
+	doneChan := make(chan bool, 3)
 	doneCount := 0
 
 	if inFlag {
-		wrapStdin(proc, os.Stdin, done)
+		wrapStdin(proc, os.Stdin, doneChan)
 		doneCount++
 	}
 
 	if outFlag {
-		wrapStdout(proc, os.Stdout, stdoutMarker, done)
+		wrapStdout(proc, os.Stdout, stdoutMarker, doneChan)
 		doneCount++
 	}
 
 	switch errFlag {
 	case "out":
 		if outFlag {
-			wrapStderr(proc, os.Stdout, stdoutMarker, done)
+			wrapStderr(proc, os.Stdout, stdoutMarker, doneChan)
 			doneCount++
 		}
 	case "err":
-		wrapStderr(proc, os.Stdout, stderrMarker, done)
+		wrapStderr(proc, os.Stdout, stderrMarker, doneChan)
 		doneCount++
 	case "nil":
 		// no-op
@@ -42,8 +44,21 @@ func proto_1_0(inFlag, outFlag bool, errFlag, workdir string, args []string) err
 		logger.Panicf("undefined redirect: '%v'\n", errFlag)
 	}
 
+	// Initial ack to make sure all pipes have been connected
+	for i := 0; i < doneCount; i++ {
+		<-doneChan
+	}
+
 	// FIXME: perform proper handshake instead
-	err := proc.Run()
+	err := proc.Start()
+	fatal_if(err)
+
+	// Finishing ack to ensure all pipes were closed
+	for i := 0; i < doneCount; i++ {
+		<-doneChan
+	}
+
+	err = proc.Wait()
 	if e, ok := err.(*exec.Error); ok {
 		// This shouldn't really happen in practice because we check for
 		// program existence in Elixir, before launching goon
@@ -51,8 +66,5 @@ func proto_1_0(inFlag, outFlag bool, errFlag, workdir string, args []string) err
 		os.Exit(3)
 	}
 	logger.Printf("Run FINISHED: %#v\n", err)
-	for i := 0; i < doneCount; i++ {
-		<-done
-	}
 	return err
 }

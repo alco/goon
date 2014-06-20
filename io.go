@@ -38,6 +38,7 @@ func wrapStderr(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) {
 func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 	buf := make([]byte, 2)
 	logger.Println("Entering stdin loop")
+	done <- true
 	for {
 		bytes_read, read_err := io.ReadFull(stdin, buf)
 		if read_err == io.EOF && bytes_read == 0 {
@@ -75,6 +76,7 @@ func outLoop(pipe io.ReadCloser, outstream io.Writer, char byte, done chan bool)
 	buf := outBuf
 	buf[2] = char
 	logger.Printf("Entering out loop with %v\n", char)
+	done <- true
 	for {
 		bytes_read, read_err := pipe.Read(buf[3:])
 		logger.Printf("out: read bytes: %v\n", bytes_read)

@@ -96,7 +96,7 @@ func outLoop(pipe io.ReadCloser, outstream io.Writer, char byte, done chan bool)
 			// In this case it appears that 0 bytes may sometimes be returned
 			// indefinitely. Therefore we close the pipe.
 			if read_err == io.EOF {
-				logger.Println("Encountered EOF on input")
+				logger.Println("Encountered EOF when reading from stdout")
 			} else {
 				logger.Println("Read 0 bytes with no error")
 			}

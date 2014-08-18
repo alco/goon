@@ -8,6 +8,8 @@ import (
 
 type protoImplT func(bool, bool, string, string, []string) error
 
+const VERSION = "1.0.2"
+
 const usage = "Usage: goon -proto <version> [options] -- <program> [<arg>...]"
 
 var protoFlag = flag.String("proto", "", "protocol version (one of: 1.0)")
@@ -17,10 +19,15 @@ var outFlag = flag.Bool("out", false, "output program's stdout")
 var errFlag = flag.String("err", "nil", "output or redirect stderr")
 var dirFlag = flag.String("dir", ".", "working directory for the spawned process")
 var logFlag = flag.String("log", "", "enable logging")
+var versionFlag = flag.Bool("v", false, "print version and exit")
 
 func main() {
 	flag.Parse()
-	args := flag.Args()
+
+	if *versionFlag {
+		fmt.Printf("%s\n", VERSION)
+		os.Exit(0)
+	}
 
 	if *protoFlag == "" {
 		die_usage("Please specify the protocol version.")
@@ -31,6 +38,8 @@ func main() {
 	}
 
 	initLogger(*logFlag)
+
+	args := flag.Args()
 	validateArgs(args)
 
 	/* Run external program and block until it terminates */

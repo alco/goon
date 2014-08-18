@@ -117,8 +117,8 @@ func outLoop(pipe io.ReadCloser, outstream io.Writer, char byte, done chan bool)
 }
 
 // Unpack the 2-byte integer stored in big endian order
-func read16_be(data []byte) int16 {
-	return int16(data[0]) << 8 | int16(data[1])
+func read16_be(data []byte) uint16 {
+	return uint16(data[0]) << 8 | uint16(data[1])
 }
 
 // Pack a 2-byte integer in big endian order

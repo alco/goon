@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 )
 
 func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) {
@@ -13,6 +14,16 @@ func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) {
 	fatal_if(err)
 
 	go inLoop(pipe, stdin, done)
+}
+
+// for protocol v2.0
+func wrapStdin2(proc *exec.Cmd, stdin io.Reader, done chan bool) {
+	logger.Println("Wrapping stdin")
+
+	pipe, err := proc.StdinPipe()
+	fatal_if(err)
+
+	go inLoop2(pipe, proc, stdin, done)
 }
 
 func wrapStdout(proc *exec.Cmd, outstream io.Writer, opt byte, done chan bool) {
@@ -61,9 +72,63 @@ func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 	done <- true
 }
 
+func inLoop2(pipe io.WriteCloser, proc *exec.Cmd, stdin io.Reader, done chan bool) {
+	buf := make([]byte, 3)
+	logger.Println("Entering stdin loop")
+	done <- true
+	loop: for {
+		bytes_read, read_err := io.ReadFull(stdin, buf[:2])
+		if read_err == io.EOF && bytes_read == 0 {
+			break
+		}
+		fatal_if(read_err)
+
+		length := read16_be(buf[:2])
+		logger.Printf("in: packet length = %v\n", length)
+		if length == 0 {
+			// this is how Porcelain signals EOF from Elixir
+			break
+		}
+
+		_, read_err = io.ReadFull(stdin, buf[2:])
+		fatal_if(read_err)
+
+		data_type := buf[2]
+		switch data_type {
+		case 0:  // input data
+			bytes_written, write_err := io.CopyN(pipe, stdin, int64(length)-1)
+			logger.Printf("in: copied %v bytes\n", bytes_written)
+			fatal_if(write_err)
+
+		case 1:  // signal
+			bytes_read, read_err = io.ReadFull(stdin, buf[2:])
+			fatal_if(read_err)
+
+			sig := buf[2]
+			switch sig {
+			case 128:
+				sig_err := proc.Process.Signal(os.Interrupt)
+				fatal_if(sig_err)
+			case 129:
+				sig_err := proc.Process.Signal(os.Kill)
+				fatal_if(sig_err)
+			default:
+				sig_err := proc.Process.Signal(syscall.Signal(sig))
+				fatal_if(sig_err)
+			}
+			break loop
+
+		default:
+			logger.Panicf("unhandled input marker: '%v'\n", buf[2])
+		}
+	}
+	pipe.Close()
+	done <- true
+}
+
 ///
 
-// Maximum buffer size for protocol 0.0 is 2 + 2^16-1 - 1
+// Maximum buffer size for protocol 1.0 is 2 + 2^16-1 - 1
 //
 //   * 2 is the packet length
 //   * 2^16-1 is the maximum amount of data that can be encoded in a

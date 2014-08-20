@@ -75,6 +75,8 @@ func findProtocolImpl(flag string) (impl protoImplT) {
 	switch flag {
 	case "1.0":
 		impl = proto_1_0
+	case "2.0":
+		impl = proto_2_0
 	}
 	return
 }

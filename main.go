@@ -8,7 +8,7 @@ import (
 
 type protoImplT func(bool, bool, string, string, []string) error
 
-const VERSION = "1.0.2"
+const VERSION = "1.1.0"
 
 const usage = "Usage: goon -proto <version> [options] -- <program> [<arg>...]"
 

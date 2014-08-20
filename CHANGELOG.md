@@ -1,6 +1,13 @@
 Changelog
 =========
 
+## v1.1.0 – Aug 20, 2014
+
+### Enhancements
+
+  * tentative support for sending OS signals
+
+
 ## v1.0.2 – Aug 18, 2014
 
 ### Bug fixes

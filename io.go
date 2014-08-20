@@ -4,7 +4,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"syscall"
 )
 
 func wrapStdin(proc *exec.Cmd, stdin io.Reader, done chan bool) {
@@ -113,7 +112,7 @@ func inLoop2(pipe io.WriteCloser, proc *exec.Cmd, stdin io.Reader, done chan boo
 				sig_err := proc.Process.Signal(os.Kill)
 				fatal_if(sig_err)
 			default:
-				sig_err := proc.Process.Signal(syscall.Signal(sig))
+				sig_err := proc.Process.Signal(makeSignal(sig))
 				fatal_if(sig_err)
 			}
 			break loop

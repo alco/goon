@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -16,4 +17,8 @@ func getExitStatus(err error) int {
 		}
 	}
 	return 1
+}
+
+func makeSignal(sig byte) os.Signal {
+	return syscall.Signal(int(sig));
 }

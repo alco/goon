@@ -7,7 +7,7 @@ import (
 
 func die(reason string) {
 	if logger != nil {
-		logger.Println("dying:", reason)
+		logger.Printf("dying: %v\n", reason)
 	}
 	fmt.Fprintln(os.Stderr, reason)
 	os.Exit(-1)
@@ -15,19 +15,27 @@ func die(reason string) {
 
 func die_usage(reason string) {
 	if logger != nil {
-		logger.Println("dying:", reason)
+		logger.Printf("dying: %v\n", reason)
 	}
 	fmt.Fprintf(os.Stderr, "%v\n%v\n", reason, usage)
 	os.Exit(-1)
 }
 
 func fatal(any interface{}) {
-	logger.Panicln(any)
+	if logger == nil {
+		fmt.Fprintf(os.Stderr, "%v\n", any)
+		os.Exit(-1)
+	}
+	logger.Panicf("%v\n", any)
 }
 
 func fatal_if(any interface{}) {
+	if logger == nil {
+		fmt.Fprintf(os.Stderr, "%v\n", any)
+		os.Exit(-1)
+	}
 	if any != nil {
-		logger.Panicln(any)
+		logger.Panicf("%v\n", any)
 	}
 }
 

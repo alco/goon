@@ -1,6 +1,13 @@
 Changelog
 =========
 
+## v1.1.1 – Sep 2, 2014
+
+### Bug fixes
+
+  * fix issues that caused goon to crash when initializing the logger
+
+
 ## v1.1.0 – Aug 20, 2014
 
 ### Enhancements

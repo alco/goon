@@ -3,7 +3,6 @@ Goon
 
 Goon is a companion program for the [Porcelain][1] library written in Elixir.
 
-
 ## Usage with Porcelain
 
 Go to [Releases][2] and pick the `goon` binary for your system. Put it
@@ -17,6 +16,11 @@ for history.
   [1]: https://github.com/alco/porcelain
   [2]: https://github.com/alco/goon/releases
 
+## Building from source
+
+```sh
+$ go build
+```
 
 ## License
 

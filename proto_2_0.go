@@ -19,10 +19,7 @@ func proto_2_0(inFlag, outFlag bool, errFlag, workdir string, args []string) err
 	doneChan := make(chan bool, 3)
 	doneCount := 0
 
-	if inFlag {
-		wrapStdin2(proc, os.Stdin, doneChan)
-		doneCount++
-	}
+        wrapStdin2(proc, os.Stdin, doneChan)
 
 	if outFlag {
 		wrapStdout(proc, os.Stdout, stdoutMarker, doneChan)

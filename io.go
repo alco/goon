@@ -86,7 +86,8 @@ func inLoop2(pipe io.WriteCloser, proc *exec.Cmd, stdin io.Reader, done chan boo
 		logger.Printf("in: packet length = %v\n", length)
 		if length == 0 {
 			// this is how Porcelain signals EOF from Elixir
-			break
+                        pipe.Close()
+                        continue
 		}
 
 		_, read_err = io.ReadFull(stdin, buf[2:])
@@ -122,6 +123,7 @@ func inLoop2(pipe io.WriteCloser, proc *exec.Cmd, stdin io.Reader, done chan boo
 		}
 	}
 	pipe.Close()
+        logger.Println("Exiting stdin loop")
 	done <- true
 }
 

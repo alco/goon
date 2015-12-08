@@ -74,7 +74,6 @@ func inLoop(pipe io.WriteCloser, stdin io.Reader, done chan bool) {
 func inLoop2(pipe io.WriteCloser, proc *exec.Cmd, stdin io.Reader, done chan bool) {
 	buf := make([]byte, 3)
 	logger.Println("Entering stdin loop")
-	done <- true
 	loop: for {
 		bytes_read, read_err := io.ReadFull(stdin, buf[:2])
 		if read_err == io.EOF && bytes_read == 0 {
@@ -124,7 +123,6 @@ func inLoop2(pipe io.WriteCloser, proc *exec.Cmd, stdin io.Reader, done chan boo
 	}
 	pipe.Close()
         logger.Println("Exiting stdin loop")
-	done <- true
 }
 
 ///
